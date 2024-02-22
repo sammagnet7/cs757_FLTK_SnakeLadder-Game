@@ -3,7 +3,7 @@
 
 ## Building on Linux
 ```Bash
-fltk-config --use-images --compile snake.cpp
+g++ -o snake snake.cpp SoundFX.cpp `fltk-config --cxxflags --ldflags --use-images` -lopenal -lsndfile -Llib/
 ```
 ## Building on Mac
 ```Bash

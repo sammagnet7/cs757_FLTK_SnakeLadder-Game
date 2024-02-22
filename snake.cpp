@@ -12,6 +12,7 @@
 #include <random>
 #include <utility>
 #include <iostream>
+#include "SoundFX.hpp"
 using namespace std;
 const int BOARD_SIZE = 10;
 const int SQUARE_SIZE = 57;
@@ -268,6 +269,7 @@ ScoreBoardWidget *ScoreBoardWidget::_instance = nullptr;
 class BoardGameWidget : public Fl_Widget
 {
 protected:
+    SoundFX *sound;
     AbstractBoard *gameBoard;
     DiceWidget *dice;
     ScoreBoardWidget *scoreboard;
@@ -294,10 +296,12 @@ public:
         scoreboard = CreateScoreBoard();
         AddPlayer();
         window->end();
+        sound = new SoundFX("example.mp3");
     }
     int play()
     {
         window->show();
+        sound->play();
         return Fl::run();
     }
     void draw()
