@@ -212,7 +212,7 @@ public:
     {
         return positionMap[pos - 1] + 1;
     }
-    Coord getPixelCoordinates(int pos)
+    Coord getPixelCoordinates(int pos)  override
     {
         auto p = positionMap[pos - 1];
         auto p1 = std::make_pair(squares[p].x + 5, squares[p].y + 5);
