@@ -136,11 +136,13 @@ protected:
 
 public:
     SoundDriver(std::string filename) : m_filename(filename), _soundThread(nullptr) {}
-    ~SoundDriver()
-    {
+    virtual ~SoundDriver() {
+         {
         if (_soundThread)
             delete _soundThread;
-    }
+        }
+    };
+    
     virtual void playSound() = 0;
 };
 
@@ -149,7 +151,7 @@ class SnakeLadderGameSound : public SoundDriver
 #ifdef __APPLE__
     void playSound_MAC()
     {
-        CFURLRef fileURL = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8 *)filename, strlen(filename), false);
+        CFURLRef fileURL = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8 *)m_filename.c_str(), strlen(m_filename.c_str()), false);
         if (!fileURL)
         {
             std::cerr << "Failed to create file URL" << std::endl;
@@ -236,6 +238,7 @@ class SnakeLadderGameSound : public SoundDriver
 #endif
 public:
     SnakeLadderGameSound(std::string filename) : SoundDriver(filename) {}
+    
     void playSound() override
     {
 
