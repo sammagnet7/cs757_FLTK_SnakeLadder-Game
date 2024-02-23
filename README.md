@@ -16,5 +16,5 @@ sudo apt-get install linfltk1.3-dev
 ```
 ### FLTK install command on Mac
 ```Bash
-sudo apt-get install linfltk1.3-dev
+sudo brew install fltk
 ```
