@@ -12,7 +12,17 @@
 #include <random>
 #include <utility>
 #include <iostream>
-#include "SoundFX.hpp"
+#ifdef __APPLE__
+#include <CoreAudio/CoreAudio.h>
+#include <AudioToolbox/AudioToolbox.h>
+#endif
+#ifdef __linux__
+#include <alsa/asoundlib.h>
+#endif
+#include <thread>
+#include <chrono>
+
+#define MUSICFILENAME "example.wav"
 using namespace std;
 const int BOARD_SIZE = 10;
 const int SQUARE_SIZE = 57;
@@ -21,6 +31,7 @@ const int BORDER_Y = 31;
 const int WINDOW_WIDTH = BOARD_SIZE * SQUARE_SIZE + 200 + 2 * BORDER_X;
 const int WINDOW_HEIGHT = BOARD_SIZE * SQUARE_SIZE + 2 * BORDER_Y;
 typedef std::pair<std::pair<int, int>, std::pair<int, int>> Coord;
+
 class DiceWidget : public Fl_Widget
 {
     static DiceWidget *_instance;
@@ -114,6 +125,127 @@ public:
     void draw() override
     {
         playerBox->resize(x, y, w, h);
+    }
+};
+
+class SoundDriver
+{
+protected:
+    std::string m_filename;
+    std::thread *_soundThread;
+
+public:
+    SoundDriver(std::string filename) : m_filename(filename), _soundThread(nullptr) {}
+    ~SoundDriver()
+    {
+        if (_soundThread)
+            delete _soundThread;
+    }
+    virtual void playSound() = 0;
+};
+
+class SnakeLadderGameSound : public SoundDriver
+{
+#ifdef __APPLE__
+    void playSound_MAC()
+    {
+        CFURLRef fileURL = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8 *)filename, strlen(filename), false);
+        if (!fileURL)
+        {
+            std::cerr << "Failed to create file URL" << std::endl;
+            return;
+        }
+        SystemSoundID soundID;
+        OSStatus status = AudioServicesCreateSystemSoundID(fileURL, &soundID);
+        CFRelease(fileURL);
+        if (status != kAudioServicesNoError)
+        {
+            std::cerr << "Failed to create system sound ID: " << status << std::endl;
+            return;
+        }
+        while (true)
+        {
+            AudioServicesPlaySystemSound(soundID);
+            // Add a delay to control the loop speed (optional)
+            std::this_thread::sleep_for(std::chrono::seconds(24));
+        }
+    }
+#endif
+#ifdef __linux__
+    void playSound_linux()
+    {
+        unsigned int pcm, tmp, dir, rate, channels, seconds;
+#ifdef SND_LIB_VERSION
+        snd_pcm_t *pcm_handle;
+        snd_pcm_hw_params_t *params;
+        snd_pcm_uframes_t frames;
+        char *buff;
+        int buff_size, loops;
+
+        rate = 44100;
+        channels = 2;
+        // seconds = 24;
+
+        /* Open the PCM device in playback mode */
+        if (pcm = snd_pcm_open(&pcm_handle, "default", SND_PCM_STREAM_PLAYBACK, 0) < 0)
+            cout << "ERROR: Couldn't play sound on this system." << snd_strerror(pcm) << endl;
+        else
+        {
+            /* Allocate parameters object and fill it with default values*/
+            snd_pcm_hw_params_alloca(&params);
+
+            snd_pcm_hw_params_any(pcm_handle, params);
+            // set params
+            snd_pcm_hw_params_set_access(pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
+            snd_pcm_hw_params_set_format(pcm_handle, params, SND_PCM_FORMAT_S16_LE);
+            snd_pcm_hw_params_set_channels(pcm_handle, params, channels);
+            snd_pcm_hw_params_set_rate_near(pcm_handle, params, &rate, 0);
+            snd_pcm_hw_params(pcm_handle, params);
+            snd_pcm_hw_params_get_period_size(params, &frames, 0);
+
+            buff_size = frames * channels * 2 /* 2 -> sample size */;
+            buff = (char *)malloc(buff_size);
+
+            snd_pcm_hw_params_get_period_time(params, &tmp, NULL);
+            int fd = open(m_filename.c_str(), O_RDONLY);
+            while (true)
+            {
+                int bytes_read = read(fd, buff, buff_size);
+                if (bytes_read == 0)
+                {
+                    // End of file, reset file pointer to the beginning
+                    lseek(fd, 0, SEEK_SET);
+                    continue;
+                }
+                if (bytes_read < 0)
+                {
+                    // Error reading file
+                    cout << "ERROR: Couldn't read sound file." << endl;
+                    break;
+                }
+                snd_pcm_writei(pcm_handle, buff, frames);
+            }
+
+            snd_pcm_drain(pcm_handle);
+            snd_pcm_close(pcm_handle);
+            free(buff);
+        }
+
+#endif
+    }
+#endif
+public:
+    SnakeLadderGameSound(std::string filename) : SoundDriver(filename) {}
+    void playSound() override
+    {
+
+#ifdef __APPLE__
+        _soundThread = new thread(&SnakeLadderGameSound::playSound_MAC, this);
+        _soundThread->detach();
+#elif __linux__
+        _soundThread = new thread(&SnakeLadderGameSound::playSound_linux, this);
+        _soundThread->detach();
+#endif
     }
 };
 
@@ -212,7 +344,7 @@ public:
     {
         return positionMap[pos - 1] + 1;
     }
-    Coord getPixelCoordinates(int pos)  override
+    Coord getPixelCoordinates(int pos) override
     {
         auto p = positionMap[pos - 1];
         auto p1 = std::make_pair(squares[p].x + 5, squares[p].y + 5);
@@ -269,11 +401,10 @@ ScoreBoardWidget *ScoreBoardWidget::_instance = nullptr;
 class BoardGameWidget : public Fl_Widget
 {
 protected:
-    SoundFX *sound;
     AbstractBoard *gameBoard;
     DiceWidget *dice;
     ScoreBoardWidget *scoreboard;
-
+    SoundDriver *sfx;
     virtual AbstractBoard *CreateBoard() = 0;
     virtual DiceWidget *CreateDice() = 0;
     virtual ScoreBoardWidget *CreateScoreBoard() = 0;
@@ -288,6 +419,14 @@ public:
     BoardGameWidget(int x, int y, int w, int h, Fl_Window *_window, const char *label = nullptr)
         : window(_window), Fl_Widget(x, y, w, h, label), gameDone(false)
     {
+        sfx = new SnakeLadderGameSound(MUSICFILENAME);
+    }
+    ~BoardGameWidget()
+    {
+        delete sfx;
+        delete gameBoard;
+        delete dice;
+        delete scoreboard;
     }
     void CreateGame()
     {
@@ -296,13 +435,14 @@ public:
         scoreboard = CreateScoreBoard();
         AddPlayer();
         window->end();
-        sound = new SoundFX("example.mp3");
     }
     int play()
     {
+        // Start playing the sound in a separate thread
+
         window->show();
-        sound->play();
-        return Fl::run();
+        sfx->playSound();
+        return Fl::run(); // Start FLTK event loop
     }
     void draw()
     {
@@ -362,6 +502,13 @@ public:
         : BoardGameWidget(x, y, w, h, _window, label), turn(false), currentPlayerColor(RED)
 
     {
+    }
+    ~SnakeLadderBoardGameWidget()
+    {
+        BoardGameWidget::~BoardGameWidget();
+        delete playerA;
+        delete playerB;
+        delete currentPlayer;
     }
     void AddPlayer() override
     {
