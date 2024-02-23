@@ -28,7 +28,7 @@ const int WINDOW_WIDTH = BOARD_SIZE * SQUARE_SIZE + 200 + 2 * BORDER_X;
 const int WINDOW_HEIGHT = BOARD_SIZE * SQUARE_SIZE + 2 * BORDER_Y;
 typedef std::pair<std::pair<int, int>, std::pair<int, int>> Coord;
 
-void playSound(const char* filename) {
+void playSound_MAC(const char* filename) {
     CFURLRef fileURL = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8*)filename, strlen(filename), false);
     if (!fileURL) {
         std::cerr << "Failed to create file URL" << std::endl;
@@ -326,7 +326,7 @@ public:
     int play()
     {   
         // Start playing the sound in a separate thread
-        std::thread soundThread(playSound, MUSICFILENAME); // Replace "example.wav" with the path to your audio file
+        std::thread soundThread(playSound_MAC, MUSICFILENAME); // Replace "example.wav" with the path to your audio file
 
         window->show();        
         return Fl::run();   // Start FLTK event loop
