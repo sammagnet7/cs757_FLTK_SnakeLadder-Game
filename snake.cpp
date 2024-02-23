@@ -12,6 +12,13 @@
 #include <random>
 #include <utility>
 #include <iostream>
+#include <CoreAudio/CoreAudio.h>
+#include <AudioToolbox/AudioToolbox.h>
+#include <thread>
+#include <chrono> 
+
+#define MUSICFILENAME "example.wav"
+
 using namespace std;
 const int BOARD_SIZE = 10;
 const int SQUARE_SIZE = 57;
@@ -20,6 +27,27 @@ const int BORDER_Y = 31;
 const int WINDOW_WIDTH = BOARD_SIZE * SQUARE_SIZE + 200 + 2 * BORDER_X;
 const int WINDOW_HEIGHT = BOARD_SIZE * SQUARE_SIZE + 2 * BORDER_Y;
 typedef std::pair<std::pair<int, int>, std::pair<int, int>> Coord;
+
+void playSound(const char* filename) {
+    CFURLRef fileURL = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8*)filename, strlen(filename), false);
+    if (!fileURL) {
+        std::cerr << "Failed to create file URL" << std::endl;
+        return;
+    }
+    SystemSoundID soundID;
+    OSStatus status = AudioServicesCreateSystemSoundID(fileURL, &soundID);
+    CFRelease(fileURL);
+    if (status != kAudioServicesNoError) {
+        std::cerr << "Failed to create system sound ID: " << status << std::endl;
+        return;
+    }
+    while (true) {
+        AudioServicesPlaySystemSound(soundID);
+        // Add a delay to control the loop speed (optional)
+        std::this_thread::sleep_for(std::chrono::seconds(24)); 
+    }
+}
+
 class DiceWidget : public Fl_Widget
 {
     static DiceWidget *_instance;
@@ -296,9 +324,15 @@ public:
         window->end();
     }
     int play()
-    {
-        window->show();
-        return Fl::run();
+    {   
+        // Start playing the sound in a separate thread
+        std::thread soundThread(playSound, MUSICFILENAME); // Replace "example.wav" with the path to your audio file
+
+        window->show();        
+        return Fl::run();   // Start FLTK event loop
+
+        soundThread.join();    // Wait for the sound thread to finish before exiting
+
     }
     void draw()
     {
