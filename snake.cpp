@@ -22,8 +22,10 @@
 #include <thread>
 #include <chrono>
 
-#define MUSICFILENAME "example.wav"
 using namespace std;
+
+#define MUSICFILENAME "example.wav"
+
 const int BOARD_SIZE = 10;
 const int SQUARE_SIZE = 57;
 const int BORDER_X = 31;
@@ -41,10 +43,8 @@ class DiceWidget : public Fl_Widget
     std::array<Fl_PNG_Image *, 6> diceFaces;
     Fl_Box *diceBox;
     Fl_PNG_Image *currentFace;
-    void setDiceImage(unsigned int pos)
-    {
-        currentFace = diceFaces[pos - 1];
-    }
+
+private:
     DiceWidget(int x, int y, int w, int h, const char *label = nullptr)
         : Fl_Widget(x, y, w, h, label), gen(rd()), dist(1, 6), currentFace(nullptr)
     {
@@ -59,7 +59,19 @@ class DiceWidget : public Fl_Widget
         diceBox->color(FL_WHITE);  // Set the background color of the box
     }
 
+    void setDiceImage(unsigned int pos)
+    {
+        currentFace = diceFaces[pos - 1];
+    }
+
 public:
+    ~DiceWidget()
+    {
+        delete diceBox;
+        for (int i = 0; i < diceFaces.max_size(); ++i, delete diceFaces[i])
+            ;
+    }
+
     static DiceWidget *getInstance(int x, int y, int w, int h, const char *label = nullptr)
     {
 
@@ -69,12 +81,7 @@ public:
         }
         return _instance;
     }
-    ~DiceWidget()
-    {
-        delete diceBox;
-        for (int i = 0; i < diceFaces.max_size(); ++i, delete diceFaces[i])
-            ;
-    }
+
     void draw() override
     {
         //  Draw dice image
@@ -85,6 +92,7 @@ public:
             diceBox->size(currentFace->w() + 10, currentFace->h() + 10);
         }
     }
+
     unsigned int roll()
     {
         unsigned int r = dist(gen);
@@ -93,7 +101,9 @@ public:
         return r;
     }
 };
+
 DiceWidget *DiceWidget::_instance = nullptr;
+
 class PlayerWidget : public Fl_Widget
 {
     int position;
@@ -107,14 +117,18 @@ public:
     {
         playerBox = new Fl_Box(0, 0, w, h, "");
         playerBox->color(col);
-        playerBox->box(FL_FLAT_BOX); // Set the box type to FL_FLAT_BOX for a flat appearance
+        playerBox->box(FL_FLAT_BOX);
     }
+
     ~PlayerWidget()
     {
         delete playerBox;
     }
+
     void updatePosition(int pos) { position = pos; }
+
     int getPosition() const { return position; }
+
     void updateCoordinates(int x, int y, int w, int h)
     {
         this->x = x;
@@ -122,6 +136,7 @@ public:
         this->w = w;
         this->h = h;
     }
+
     void draw() override
     {
         playerBox->resize(x, y, w, h);
@@ -136,18 +151,37 @@ protected:
 
 public:
     SoundDriver(std::string filename) : m_filename(filename), _soundThread(nullptr) {}
-    virtual ~SoundDriver() {
-         {
-        if (_soundThread)
-            delete _soundThread;
+
+    virtual ~SoundDriver()
+    {
+        {
+            if (_soundThread)
+                delete _soundThread;
         }
-    };
-    
+    }
+
     virtual void playSound() = 0;
 };
 
 class SnakeLadderGameSound : public SoundDriver
 {
+
+public:
+    SnakeLadderGameSound(std::string filename) : SoundDriver(filename) {}
+
+    void playSound() override
+    {
+
+#ifdef __APPLE__
+        _soundThread = new thread(&SnakeLadderGameSound::playSound_MAC, this);
+        _soundThread->detach();
+#elif __linux__
+        _soundThread = new thread(&SnakeLadderGameSound::playSound_linux, this);
+        _soundThread->detach();
+#endif
+    }
+
+private:
 #ifdef __APPLE__
     void playSound_MAC()
     {
@@ -236,43 +270,70 @@ class SnakeLadderGameSound : public SoundDriver
 #endif
     }
 #endif
-public:
-    SnakeLadderGameSound(std::string filename) : SoundDriver(filename) {}
-    
-    void playSound() override
-    {
-
-#ifdef __APPLE__
-        _soundThread = new thread(&SnakeLadderGameSound::playSound_MAC, this);
-        _soundThread->detach();
-#elif __linux__
-        _soundThread = new thread(&SnakeLadderGameSound::playSound_linux, this);
-        _soundThread->detach();
-#endif
-    }
 };
 
 class AbstractBoard : public Fl_Widget
 {
+public:
+    virtual int getDestination(int pos) = 0;
+
+    void draw(){};
+
+    virtual std::pair<std::pair<int, int>, std::pair<int, int>> getPixelCoordinates(int pos) = 0;
+
 protected:
     AbstractBoard(int x, int y, int w, int h, const char *label = nullptr)
         : Fl_Widget(x, y, w, h, label)
     {
     }
-    virtual void embedLogic() = 0;
 
-public:
-    virtual int getDestination(int pos) = 0;
-    void draw(){};
-    virtual std::pair<std::pair<int, int>, std::pair<int, int>> getPixelCoordinates(int pos) = 0;
+    virtual void embedLogic() = 0;
 };
 
 class SnakeLadderBoardWidget : public AbstractBoard
 {
-    static SnakeLadderBoardWidget *_instance;
+public:
+    ~SnakeLadderBoardWidget()
+    {
+        delete m_boardBox;
+        delete m_boardPNG;
+    }
+
+    static SnakeLadderBoardWidget *getInstance(int x, int y, int w, int h, const char *label = nullptr)
+    {
+        if (_instance == nullptr)
+        {
+            _instance = new SnakeLadderBoardWidget(x, y, w, h, label);
+        }
+        return _instance;
+    }
+
+    int getDestination(int pos) override // query the array to return the actual destination of player
+    {
+        return positionMap[pos - 1] + 1;
+    }
+
+    Coord getPixelCoordinates(int pos) override
+    {
+        auto p = positionMap[pos - 1];
+        auto p1 = std::make_pair(squares[p].x + 5, squares[p].y + 5);
+        auto p2 = std::make_pair(SQUARE_SIZE - 20, SQUARE_SIZE - 20);
+        return std::make_pair(p1, p2);
+    }
+    void draw() override
+    {
+        m_boardBox->image(m_boardPNG);
+
+        m_boardBox->size(m_boardPNG->w(), m_boardPNG->h());
+    }
+
+private:
+
+   static SnakeLadderBoardWidget *_instance;
     Fl_Box *m_boardBox;
     Fl_PNG_Image *m_boardPNG;
     std::array<int, 100> positionMap;
+
     struct Square
     {
         int x, y;
@@ -281,12 +342,20 @@ class SnakeLadderBoardWidget : public AbstractBoard
         Square(int x, int y, int number, int destination = -1) : x(x), y(y), number(number), destination(destination) {}
     };
     std::vector<Square> squares;
+
+    SnakeLadderBoardWidget(int x, int y, int w, int h, const char *label = nullptr) : AbstractBoard(x, y, w, h, label)
+    {
+        embedLogic();
+        m_boardBox = new Fl_Box(0, 15, 0, 0, "");
+        m_boardPNG = new Fl_PNG_Image("board.png");
+    }
+
     void embedLogic() override
     {
         for (size_t i = 0; i < positionMap.max_size(); i++)
         {
             positionMap[i] = i;
-        }
+        }   
         positionMap[3] = 55;
         positionMap[11] = 49;
         positionMap[13] = 54;
@@ -320,53 +389,44 @@ class SnakeLadderBoardWidget : public AbstractBoard
             reverse = !reverse;
         }
     }
+};
 
-    SnakeLadderBoardWidget(int x, int y, int w, int h, const char *label = nullptr)
-        : AbstractBoard(x, y, w, h, label)
+SnakeLadderBoardWidget *SnakeLadderBoardWidget::_instance = nullptr;
+
+
+class ScoreBoardWidget : public Fl_Widget
+{
+public:
+    ~ScoreBoardWidget()
     {
-        embedLogic();
-        m_boardBox = new Fl_Box(0, 15, 0, 0, "");
-        m_boardPNG = new Fl_PNG_Image("board.png");
+        delete msgBox;
     }
 
-public:
-    static SnakeLadderBoardWidget *getInstance(int x, int y, int w, int h, const char *label = nullptr)
+    static ScoreBoardWidget *getInstance(int x, int y, int w, int h, const char *label = nullptr)
     {
         if (_instance == nullptr)
         {
-            _instance = new SnakeLadderBoardWidget(x, y, w, h, label);
+            _instance = new ScoreBoardWidget(x, y, w, h, label);
         }
         return _instance;
     }
-    ~SnakeLadderBoardWidget()
+
+    void setMessage(std::string message)
     {
-        delete m_boardBox;
-        delete m_boardPNG;
+        msg = message;
     }
-    int getDestination(int pos) override // query the array to return the actual destination of player
-    {
-        return positionMap[pos - 1] + 1;
-    }
-    Coord getPixelCoordinates(int pos) override
-    {
-        auto p = positionMap[pos - 1];
-        auto p1 = std::make_pair(squares[p].x + 5, squares[p].y + 5);
-        auto p2 = std::make_pair(SQUARE_SIZE - 20, SQUARE_SIZE - 20);
-        return std::make_pair(p1, p2);
-    }
+
     void draw() override
     {
-        m_boardBox->image(m_boardPNG);
-
-        m_boardBox->size(m_boardPNG->w(), m_boardPNG->h());
+        msgBox->copy_label(msg.c_str());
     }
-};
-SnakeLadderBoardWidget *SnakeLadderBoardWidget::_instance = nullptr;
-class ScoreBoardWidget : public Fl_Widget
-{
+
+private:
+
     static ScoreBoardWidget *_instance;
     std::string msg;
     Fl_Box *msgBox;
+
     ScoreBoardWidget(int x, int y, int w, int h, const char *label = nullptr)
         : Fl_Widget(x, y, w, h, label)
     {
@@ -376,54 +436,20 @@ class ScoreBoardWidget : public Fl_Widget
         msgBox->labelsize(18);
         msg = "";
     }
-
-public:
-    static ScoreBoardWidget *getInstance(int x, int y, int w, int h, const char *label = nullptr)
-    {
-        if (_instance == nullptr)
-        {
-            _instance = new ScoreBoardWidget(x, y, w, h, label);
-        }
-        return _instance;
-    }
-    ~ScoreBoardWidget()
-    {
-        delete msgBox;
-    }
-    void setMessage(std::string message)
-    {
-        msg = message;
-    }
-    void draw() override
-    {
-        msgBox->copy_label(msg.c_str());
-    }
 };
+
 ScoreBoardWidget *ScoreBoardWidget::_instance = nullptr;
 
 class BoardGameWidget : public Fl_Widget
 {
-protected:
-    AbstractBoard *gameBoard;
-    DiceWidget *dice;
-    ScoreBoardWidget *scoreboard;
-    SoundDriver *sfx;
-    virtual AbstractBoard *CreateBoard() = 0;
-    virtual DiceWidget *CreateDice() = 0;
-    virtual ScoreBoardWidget *CreateScoreBoard() = 0;
-    virtual PlayerWidget *CreatePlayer(uint col = FL_RED) = 0;
-    virtual void AddPlayer() = 0;
-    virtual void PositionPlayersOnBoard(Coord A, Coord B, PlayerWidget *pA, PlayerWidget *pB) = 0;
-    Fl_Window *window;
-    bool gameDone;
-    std::string rollStr;
-
 public:
+
     BoardGameWidget(int x, int y, int w, int h, Fl_Window *_window, const char *label = nullptr)
         : window(_window), Fl_Widget(x, y, w, h, label), gameDone(false)
     {
         sfx = new SnakeLadderGameSound(MUSICFILENAME);
     }
+
     ~BoardGameWidget()
     {
         delete sfx;
@@ -431,6 +457,7 @@ public:
         delete dice;
         delete scoreboard;
     }
+
     void CreateGame()
     {
         gameBoard = CreateBoard();
@@ -439,73 +466,47 @@ public:
         AddPlayer();
         window->end();
     }
+
     int play()
     {
         // Start playing the sound in a separate thread
-
         window->show();
         sfx->playSound();
         return Fl::run(); // Start FLTK event loop
     }
+
     void draw()
     {
     }
     virtual int handle(int event) = 0;
+
+protected:
+    AbstractBoard *gameBoard;
+    DiceWidget *dice;
+    ScoreBoardWidget *scoreboard;
+    SoundDriver *sfx;
+    Fl_Window *window;
+    bool gameDone;
+    std::string rollStr;
+
+    virtual AbstractBoard *CreateBoard() = 0;
+    virtual DiceWidget *CreateDice() = 0;
+    virtual ScoreBoardWidget *CreateScoreBoard() = 0;
+    virtual PlayerWidget *CreatePlayer(uint col = FL_RED) = 0;
+    virtual void AddPlayer() = 0;
+    virtual void PositionPlayersOnBoard(Coord A, Coord B, PlayerWidget *pA, PlayerWidget *pB) = 0;
+
 };
+
 class SnakeLadderBoardGameWidget : public BoardGameWidget
 {
-    bool turn;
-    PlayerWidget *playerA, *playerB, *currentPlayer;
-    Coord coordinate_playerA, coordinate_playerB;
-    AbstractBoard *CreateBoard() override
-    {
-        SnakeLadderBoardWidget *gameBoard = SnakeLadderBoardWidget::getInstance(0, 0, WINDOW_WIDTH - 200, WINDOW_HEIGHT);
-        return gameBoard;
-    }
-    DiceWidget *CreateDice() override
-    {
-        DiceWidget *dice = DiceWidget::getInstance(0, 0, WINDOW_WIDTH - 200, WINDOW_HEIGHT);
-        return dice;
-    }
-    ScoreBoardWidget *CreateScoreBoard() override
-    {
-        ScoreBoardWidget *scoreboard = ScoreBoardWidget::getInstance(0, 0, WINDOW_WIDTH - 200, WINDOW_HEIGHT);
-        return scoreboard;
-    }
-    PlayerWidget *CreatePlayer(uint col = FL_RED) override
-    {
-        PlayerWidget *pl = new PlayerWidget(0, 0, WINDOW_WIDTH - 200, WINDOW_HEIGHT, col);
-        return pl;
-    }
-    void PositionPlayersOnBoard(Coord cA, Coord cB, PlayerWidget *pA, PlayerWidget *pB) override
-    {
-        auto xyA = cA.first;
-        auto xyB = cB.first;
-        if (xyA.first == xyB.first && xyA.second == xyB.second)
-        {
-            pA->updateCoordinates(cA.first.first - 5, cA.first.second, cA.second.first * 0.66, cA.second.second * 0.66);
-            pB->updateCoordinates(cB.first.first + 25, cB.first.second, cB.second.first * 0.66, cB.second.second * 0.66);
-        }
-        else
-        {
-            pA->updateCoordinates(cA.first.first, cA.first.second, cA.second.first, cA.second.second);
-            pB->updateCoordinates(cB.first.first, cB.first.second, cB.second.first, cB.second.second);
-        }
-    }
-    enum PLAYER
-    {
-        RED,
-        GREEN,
-        BLUE
-    };
-    PLAYER currentPlayerColor;
-
 public:
+
     SnakeLadderBoardGameWidget(int x, int y, int w, int h, Fl_Window *_window, const char *label = nullptr)
         : BoardGameWidget(x, y, w, h, _window, label), turn(false), currentPlayerColor(RED)
-
     {
     }
+
     ~SnakeLadderBoardGameWidget()
     {
         BoardGameWidget::~BoardGameWidget();
@@ -513,6 +514,7 @@ public:
         delete playerB;
         delete currentPlayer;
     }
+
     void AddPlayer() override
     {
         playerA = CreatePlayer();
@@ -522,6 +524,7 @@ public:
         playerB->updateCoordinates(coords.first.first + 25, coords.first.second, coords.second.first * 0.66, coords.second.second * 0.66);
         currentPlayer = playerA;
     }
+
     int handle(int event) override
     {
         if (!gameDone && event == FL_PUSH)
@@ -584,6 +587,62 @@ public:
 
         return Fl_Widget::handle(event);
     }
+
+private:
+
+    bool turn;
+
+    PlayerWidget *playerA, *playerB, *currentPlayer;
+
+    Coord coordinate_playerA, coordinate_playerB;
+
+    AbstractBoard *CreateBoard() override
+    {
+        SnakeLadderBoardWidget *gameBoard = SnakeLadderBoardWidget::getInstance(0, 0, WINDOW_WIDTH - 200, WINDOW_HEIGHT);
+        return gameBoard;
+    }
+
+    DiceWidget *CreateDice() override
+    {
+        DiceWidget *dice = DiceWidget::getInstance(0, 0, WINDOW_WIDTH - 200, WINDOW_HEIGHT);
+        return dice;
+    }
+
+    ScoreBoardWidget *CreateScoreBoard() override
+    {
+        ScoreBoardWidget *scoreboard = ScoreBoardWidget::getInstance(0, 0, WINDOW_WIDTH - 200, WINDOW_HEIGHT);
+        return scoreboard;
+    }
+
+    PlayerWidget *CreatePlayer(uint col = FL_RED) override
+    {
+        PlayerWidget *pl = new PlayerWidget(0, 0, WINDOW_WIDTH - 200, WINDOW_HEIGHT, col);
+        return pl;
+    }
+
+    void PositionPlayersOnBoard(Coord cA, Coord cB, PlayerWidget *pA, PlayerWidget *pB) override
+    {
+        auto xyA = cA.first;
+        auto xyB = cB.first;
+        if (xyA.first == xyB.first && xyA.second == xyB.second)
+        {
+            pA->updateCoordinates(cA.first.first - 5, cA.first.second, cA.second.first * 0.66, cA.second.second * 0.66);
+            pB->updateCoordinates(cB.first.first + 25, cB.first.second, cB.second.first * 0.66, cB.second.second * 0.66);
+        }
+        else
+        {
+            pA->updateCoordinates(cA.first.first, cA.first.second, cA.second.first, cA.second.second);
+            pB->updateCoordinates(cB.first.first, cB.first.second, cB.second.first, cB.second.second);
+        }
+    }
+    
+    enum PLAYER
+    {
+        RED,
+        GREEN,
+        BLUE
+    };
+    PLAYER currentPlayerColor;
 };
 
 int main()
