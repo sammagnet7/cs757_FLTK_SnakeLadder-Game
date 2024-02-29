@@ -24,7 +24,7 @@
 
 using namespace std;
 
-#define MUSICFILENAME "example.wav"
+#define MUSICFILENAME "snake.wav"
 
 const int BOARD_SIZE = 10;
 const int SQUARE_SIZE = 57;
