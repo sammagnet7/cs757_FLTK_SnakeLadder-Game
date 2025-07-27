@@ -1,14 +1,11 @@
 # FLTK_SnakeLadder_Game (CS757_Design Of OOps)
 
 ## Project demo:
-```
 https://youtu.be/Ls99YTCr7vw
-```
 
 ## Github Code Repository:
-```
 https://github.com/sammagnet7/FLTK_SnakeLadder_Game.git
-```
+
 
 
 ## Pre-requisits (FLTK installation):
